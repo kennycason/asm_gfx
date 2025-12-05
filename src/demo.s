@@ -1,12 +1,11 @@
 // ============================================================================
 // demo.s - Demo entry point: Software rendered movable square
 // ============================================================================
-// A demo showing our custom software rasterizer:
-//   - Our own framebuffer
-//   - Our own pixel plotting
+// A demo showing:
+//   - Our own framebuffer (raster.s)
 //   - Our own shape drawing (rect, circle, line)
-//   - Arrow keys to move
-//   - ESC or window close to quit
+//   - Our own keyboard handling (keyboard.s) - NO SDL for input!
+//   - Arrow keys to move, ESC/Q to quit
 // ============================================================================
 
 .global _main
@@ -29,7 +28,7 @@ _main:
     bl      _print_str
     bl      _print_newline
     
-    // Initialize graphics (SDL window)
+    // Initialize graphics (SDL window only - no SDL input!)
     adrp    x0, window_title@PAGE
     add     x0, x0, window_title@PAGEOFF
     mov     w1, #WINDOW_WIDTH
@@ -65,6 +64,11 @@ init_ok:
     bl      _print_str
     bl      _print_newline
     
+    adrp    x0, msg_native@PAGE
+    add     x0, x0, msg_native@PAGEOFF
+    bl      _print_str
+    bl      _print_newline
+    
     // Initialize square position (center of window)
     adrp    x0, square_x@PAGE
     add     x0, x0, square_x@PAGEOFF
@@ -85,14 +89,25 @@ init_ok:
 // Main game loop
 // ============================================================================
 game_loop:
-    // Poll input events
+    // Poll SDL events (only for window close button)
     bl      _input_poll
     
-    // Check if should quit
+    // Check if window close was requested
     bl      _input_should_quit
     cbnz    w0, quit_game
     
-    // Handle movement
+    // ========== NATIVE KEYBOARD INPUT (NO SDL!) ==========
+    bl      _keyboard_update
+    
+    // Check for ESC or Q to quit
+    bl      _keyboard_get_state
+    mov     x2, x0
+    ldrb    w0, [x2, #KEY_ESCAPE]
+    cbnz    w0, quit_game
+    ldrb    w0, [x2, #KEY_Q]
+    cbnz    w0, quit_game
+    
+    // Handle movement with native keyboard
     bl      handle_movement
     
     // Increment frame counter
@@ -102,7 +117,7 @@ game_loop:
     add     w1, w1, #1
     str     w1, [x0]
     
-    // ========== SOFTWARE RENDERING STARTS HERE ==========
+    // ========== SOFTWARE RENDERING ==========
     
     // Clear framebuffer (dark background)
     mov     w0, #20                  // R
@@ -254,62 +269,95 @@ exit_program:
     ret
 
 // ============================================================================
-// handle_movement - Check key states and update position
+// handle_movement - Check NATIVE key states and update position
 // ============================================================================
 .align 4
 handle_movement:
     stp     x29, x30, [sp, #-16]!
     mov     x29, sp
     stp     x19, x20, [sp, #-16]!
+    stp     x21, x22, [sp, #-16]!
     
     // Load current position
     adrp    x19, square_x@PAGE
     add     x19, x19, square_x@PAGEOFF
-    ldr     w0, [x19]
+    ldr     w21, [x19]               // x position
     
     adrp    x20, square_y@PAGE
     add     x20, x20, square_y@PAGEOFF
-    ldr     w1, [x20]
+    ldr     w22, [x20]               // y position
     
-    // Get key state array
-    adrp    x2, _input_key_state@PAGE
-    add     x2, x2, _input_key_state@PAGEOFF
+    // Get NATIVE key state array (not SDL!)
+    bl      _keyboard_get_state
+    mov     x2, x0
     
-    // Check LEFT arrow
-    ldrb    w3, [x2, #SDL_SCANCODE_LEFT]
+    // Check LEFT arrow (native)
+    ldrb    w3, [x2, #KEY_LEFT]
     cbz     w3, check_right
-    sub     w0, w0, #MOVE_SPEED
-    cmp     w0, #0
-    csel    w0, wzr, w0, lt          // Clamp to 0
+    sub     w21, w21, #MOVE_SPEED
+    cmp     w21, #0
+    csel    w21, wzr, w21, lt        // Clamp to 0
     
 check_right:
-    ldrb    w3, [x2, #SDL_SCANCODE_RIGHT]
+    ldrb    w3, [x2, #KEY_RIGHT]
     cbz     w3, check_up
-    add     w0, w0, #MOVE_SPEED
+    add     w21, w21, #MOVE_SPEED
     mov     w4, #(WINDOW_WIDTH - DEFAULT_SQUARE_SIZE)
-    cmp     w0, w4
-    csel    w0, w4, w0, gt           // Clamp to max
+    cmp     w21, w4
+    csel    w21, w4, w21, gt         // Clamp to max
     
 check_up:
-    ldrb    w3, [x2, #SDL_SCANCODE_UP]
+    ldrb    w3, [x2, #KEY_UP]
     cbz     w3, check_down
-    sub     w1, w1, #MOVE_SPEED
-    cmp     w1, #0
-    csel    w1, wzr, w1, lt          // Clamp to 0
+    sub     w22, w22, #MOVE_SPEED
+    cmp     w22, #0
+    csel    w22, wzr, w22, lt        // Clamp to 0
     
 check_down:
-    ldrb    w3, [x2, #SDL_SCANCODE_DOWN]
-    cbz     w3, movement_done
-    add     w1, w1, #MOVE_SPEED
+    ldrb    w3, [x2, #KEY_DOWN]
+    cbz     w3, check_wasd_w
+    add     w22, w22, #MOVE_SPEED
     mov     w4, #(WINDOW_HEIGHT - DEFAULT_SQUARE_SIZE)
-    cmp     w1, w4
-    csel    w1, w4, w1, gt           // Clamp to max
+    cmp     w22, w4
+    csel    w22, w4, w22, gt         // Clamp to max
+
+    // Also support WASD!
+check_wasd_w:
+    ldrb    w3, [x2, #KEY_W]
+    cbz     w3, check_wasd_s
+    sub     w22, w22, #MOVE_SPEED
+    cmp     w22, #0
+    csel    w22, wzr, w22, lt
+    
+check_wasd_s:
+    ldrb    w3, [x2, #KEY_S]
+    cbz     w3, check_wasd_a
+    add     w22, w22, #MOVE_SPEED
+    mov     w4, #(WINDOW_HEIGHT - DEFAULT_SQUARE_SIZE)
+    cmp     w22, w4
+    csel    w22, w4, w22, gt
+    
+check_wasd_a:
+    ldrb    w3, [x2, #KEY_A]
+    cbz     w3, check_wasd_d
+    sub     w21, w21, #MOVE_SPEED
+    cmp     w21, #0
+    csel    w21, wzr, w21, lt
+    
+check_wasd_d:
+    ldrb    w3, [x2, #KEY_D]
+    cbz     w3, movement_done
+    add     w21, w21, #MOVE_SPEED
+    mov     w4, #(WINDOW_WIDTH - DEFAULT_SQUARE_SIZE)
+    cmp     w21, w4
+    csel    w21, w4, w21, gt
     
 movement_done:
     // Store updated position
-    str     w0, [x19]
-    str     w1, [x20]
+    str     w21, [x19]
+    str     w22, [x20]
     
+    ldp     x21, x22, [sp], #16
     ldp     x19, x20, [sp], #16
     ldp     x29, x30, [sp], #16
     ret
@@ -323,8 +371,9 @@ square_x:       .word 0
 square_y:       .word 0
 frame_count:    .word 0
 
-window_title:   .asciz "ASM Software Rasterizer Demo"
-msg_init:       .asciz "[INFO] Initializing software rasterizer..."
-msg_ready:      .asciz "[INFO] Ready! Arrow keys to move, ESC to quit."
+window_title:   .asciz "ASM Graphics - Native Keyboard!"
+msg_init:       .asciz "[INFO] Initializing..."
+msg_ready:      .asciz "[INFO] Ready! Arrows/WASD to move, ESC/Q to quit."
+msg_native:     .asciz "[INFO] Using NATIVE keyboard (CoreGraphics) - no SDL input!"
 msg_error:      .asciz "[ERROR] Failed to initialize!"
 msg_quit:       .asciz "[INFO] Shutting down..."

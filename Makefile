@@ -17,10 +17,10 @@ CC = clang
 ARCH := $(shell uname -m)
 ifeq ($(ARCH),arm64)
     ASFLAGS = -arch arm64
-    LDFLAGS = -arch arm64 -syslibroot $(shell xcrun --show-sdk-path) -lSystem -lSDL2 -L/opt/homebrew/lib -framework CoreFoundation
+    LDFLAGS = -arch arm64 -syslibroot $(shell xcrun --show-sdk-path) -lSystem -lSDL2 -L/opt/homebrew/lib -framework CoreFoundation -framework CoreGraphics
 else
     ASFLAGS = -arch x86_64
-    LDFLAGS = -arch x86_64 -syslibroot $(shell xcrun --show-sdk-path) -lSystem -lSDL2 -L/usr/local/lib
+    LDFLAGS = -arch x86_64 -syslibroot $(shell xcrun --show-sdk-path) -lSystem -lSDL2 -L/usr/local/lib -framework CoreGraphics
 endif
 
 # SDL2 include path
@@ -33,7 +33,7 @@ INC_DIR = include
 BUILD_DIR = build
 
 # Source files
-LIB_SRCS = $(LIB_DIR)/print.s $(LIB_DIR)/window.s $(LIB_DIR)/draw.s $(LIB_DIR)/input.s $(LIB_DIR)/raster.s
+LIB_SRCS = $(LIB_DIR)/print.s $(LIB_DIR)/window.s $(LIB_DIR)/draw.s $(LIB_DIR)/input.s $(LIB_DIR)/raster.s $(LIB_DIR)/keyboard.s
 DEMO_SRC = $(SRC_DIR)/demo.s
 
 # Object files

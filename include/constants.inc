@@ -28,12 +28,25 @@
 .set SDL_KEYDOWN,           0x300
 .set SDL_KEYUP,             0x301
 
-// SDL Scancodes (for arrow keys)
+// SDL Scancodes (for arrow keys) - legacy, kept for reference
 .set SDL_SCANCODE_RIGHT,    79
 .set SDL_SCANCODE_LEFT,     80
 .set SDL_SCANCODE_DOWN,     81
 .set SDL_SCANCODE_UP,       82
 .set SDL_SCANCODE_ESCAPE,   41
+
+// Native keyboard key indices (keyboard.s)
+.set KEY_UP,        0
+.set KEY_DOWN,      1
+.set KEY_LEFT,      2
+.set KEY_RIGHT,     3
+.set KEY_ESCAPE,    4
+.set KEY_SPACE,     5
+.set KEY_W,         6
+.set KEY_A,         7
+.set KEY_S,         8
+.set KEY_D,         9
+.set KEY_Q,         10
 
 // macOS system call numbers (ARM64)
 .set SYS_EXIT,              1

@@ -8,9 +8,9 @@ A minimal graphics library written in ARM64 assembly for macOS, featuring a **cu
 
 - **Software Rasterizer**: Our own framebuffer and pixel-level drawing
 - **Classic Algorithms**: Bresenham's line, midpoint circle
+- **Native Keyboard**: Direct keyboard via CoreGraphics (no SDL input!)
 - **Console Printing**: Print strings, integers, and hex values via syscalls
-- **Window Management**: SDL2 for window creation and blitting
-- **Input Handling**: Keyboard input with key state tracking
+- **Window Management**: SDL2 for window creation and blitting only
 
 ## Project Structure
 
@@ -23,8 +23,9 @@ asm_gfx/
 │   │   ├── print.s      # Console printing utilities
 │   │   ├── window.s     # Window/renderer management (SDL2)
 │   │   ├── draw.s       # SDL drawing primitives (legacy)
-│   │   ├── input.s      # Keyboard input handling
-│   │   └── raster.s     # ★ Software rasterizer (our code!)
+│   │   ├── input.s      # SDL input (legacy, kept for window events)
+│   │   ├── raster.s     # ★ Software rasterizer (our code!)
+│   │   └── keyboard.s   # ★ Native keyboard (CoreGraphics, no SDL!)
 │   └── demo.s           # Demo entry point
 ├── build/               # Build output (created by make)
 ├── Makefile
@@ -65,11 +66,11 @@ make run
 
 | Key | Action |
 |-----|--------|
-| ↑ | Move up |
-| ↓ | Move down |
-| ← | Move left |
-| → | Move right |
-| ESC | Quit |
+| ↑ / W | Move up |
+| ↓ / S | Move down |
+| ← / A | Move left |
+| → / D | Move right |
+| ESC / Q | Quit |
 
 ## Library API
 
@@ -144,21 +145,47 @@ mov     w1, #50
 bl      _draw_point
 ```
 
-### Input Module (`input.s`)
+### Keyboard Module (`keyboard.s`) ★ Native Input
+
+Uses CoreGraphics `CGEventSourceKeyState` - no SDL dependency!
 
 ```asm
-// Poll events (call each frame)
+// Update key states (call each frame)
+bl      _keyboard_update
+
+// Get pointer to key state array
+bl      _keyboard_get_state
+mov     x2, x0
+
+// Check specific keys using KEY_* constants
+ldrb    w0, [x2, #KEY_UP]
+cbnz    w0, handle_up
+
+ldrb    w0, [x2, #KEY_ESCAPE]
+cbnz    w0, quit_game
+
+// Available key constants:
+// KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT
+// KEY_ESCAPE, KEY_SPACE
+// KEY_W, KEY_A, KEY_S, KEY_D, KEY_Q
+
+// Or check individual key directly (Mac virtual keycode)
+mov     w0, #0x7E              // kVK_UpArrow
+bl      _keyboard_is_pressed
+cbnz    w0, up_is_pressed
+```
+
+### Legacy Input Module (`input.s`)
+
+Still used for window close events only:
+
+```asm
+// Poll SDL events (for window close button)
 bl      _input_poll
 
-// Check if should quit
+// Check if window was closed
 bl      _input_should_quit
 cbnz    w0, exit_loop
-
-// Check specific key state
-adrp    x0, _input_key_state@PAGE
-add     x0, x0, _input_key_state@PAGEOFF
-ldrb    w1, [x0, #SDL_SCANCODE_UP]
-cbnz    w1, handle_up_pressed
 ```
 
 ### Raster Module (`raster.s`) ★ Software Renderer
