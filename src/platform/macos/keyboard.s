@@ -27,6 +27,7 @@
 .set kVK_ANSI_A,            0x00
 .set kVK_ANSI_S,            0x01
 .set kVK_ANSI_D,            0x02
+.set kVK_ANSI_R,            0x0F
 .set kVK_ANSI_W,            0x0D
 .set kVK_ANSI_Q,            0x0C
 .set kVK_Space,             0x31
@@ -136,6 +137,11 @@ _keyboard_update:
     bl      _keyboard_is_pressed
     strb    w0, [x19, #KEY_Q]
     
+    // R
+    mov     w0, #kVK_ANSI_R
+    bl      _keyboard_is_pressed
+    strb    w0, [x19, #KEY_R]
+    
     ldp     x21, x22, [sp], #16
     ldp     x19, x20, [sp], #16
     ldp     x29, x30, [sp], #16
@@ -206,7 +212,8 @@ _keyboard_just_pressed:
 .set KEY_S,         8
 .set KEY_D,         9
 .set KEY_Q,         10
-.set KEY_COUNT,     11
+.set KEY_R,         11
+.set KEY_COUNT,     12
 
 .global KEY_UP
 .global KEY_DOWN
@@ -219,6 +226,7 @@ _keyboard_just_pressed:
 .global KEY_S
 .global KEY_D
 .global KEY_Q
+.global KEY_R
 
 // ============================================================================
 // Data

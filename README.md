@@ -1,59 +1,32 @@
-# ASM Graphics Library
+# Maze ASM
 
 ![Screenshot](screenshot.png)
 
-A minimal graphics library written in ARM64 assembly for macOS using native system frameworks.
+A maze game written entirely in ARM64 assembly for macOS. Navigate through randomly generated mazes using classic recursive backtracking.
+
+## About
+
+This project demonstrates building a complete graphical application in pure assembly language without relying on high-level graphics libraries like SDL. Everything from window management to pixel rendering is implemented using native macOS frameworks called directly from assembly via the Objective-C runtime.
+
+### Why Assembly?
+
+- Learn how graphics really work at the lowest level
+- Understand CPU architecture and calling conventions
+- Direct interaction with the operating system
+- No abstraction layers hiding the details
 
 ## Features
 
-- **Software Rasterizer**: Custom framebuffer with pixel-level drawing
-- **Classic Algorithms**: Bresenham's line, midpoint circle
-- **Native Window**: Cocoa window via Objective-C runtime
-- **Native Keyboard**: Direct input via CoreGraphics
-- **Native Timing**: System nanosleep for frame timing
-- **Console Output**: Strings, integers, hex via syscalls
-
-## Project Structure
-
-```
-asm_gfx/
-├── include/
-│   └── constants.inc         # Shared constants
-├── src/
-│   ├── shared/
-│   │   └── raster.s          # Software rasterizer (portable)
-│   ├── platform/
-│   │   └── macos/
-│   │       ├── print.s       # Console output (syscalls)
-│   │       ├── keyboard.s    # Keyboard input (CoreGraphics)
-│   │       ├── window.s      # Window management (Cocoa)
-│   │       └── timing.s      # Sleep/timing (nanosleep)
-│   └── demo.s                # Demo application
-├── build/                    # Build output
-├── Makefile
-└── README.md
-```
-
-## Requirements
-
-- macOS (Apple Silicon)
-- Xcode Command Line Tools
-
-## Quick Start
-
-### Build
-
-```bash
-make
-```
-
-### Run
-
-```bash
-make run
-# or directly:
-./build/demo
-```
+- **Recursive Backtracking Maze Generation** - Creates perfect mazes with exactly one path between any two points
+- **Software Rasterizer** - Custom pixel-by-pixel drawing routines
+  - Bresenham's line algorithm
+  - Midpoint circle algorithm
+  - Filled and outlined rectangles/circles
+- **Native macOS Integration** - No SDL or external graphics libraries
+  - Cocoa window management via `objc_msgSend`
+  - CoreGraphics for display and keyboard input
+  - Direct system calls for console output
+- **Smooth Controls** - Movement cooldown for precise single-tile navigation
 
 ## Controls
 
@@ -63,170 +36,102 @@ make run
 | ↓ / S | Move down |
 | ← / A | Move left |
 | → / D | Move right |
+| R | Generate new maze |
 | ESC / Q | Quit |
 
-## Library API
+## Building
 
-### Print Module (`platform/macos/print.s`)
+### Requirements
 
-```asm
-// Print a null-terminated string
-adrp    x0, my_string@PAGE
-add     x0, x0, my_string@PAGEOFF
-bl      _print_str
-bl      _print_newline
+- macOS (Apple Silicon / ARM64)
+- Xcode Command Line Tools
 
-// Print integer
-mov     x0, #42
-bl      _print_int
+### Build & Run
 
-// Print hex
-mov     x0, #0xDEADBEEF
-bl      _print_hex
+```bash
+make
+./build/demo
 ```
 
-### Window Module (`platform/macos/window.s`)
+Or simply:
 
-```asm
-// Initialize window (title, width, height)
-adrp    x0, title@PAGE
-add     x0, x0, title@PAGEOFF
-mov     w1, #800
-mov     w2, #600
-bl      _window_init
-
-// Poll events (call each frame)
-bl      _window_poll
-
-// Check if window should close
-bl      _window_should_close
-cbnz    w0, exit_loop
-
-// Blit framebuffer to window (buffer, width, height, pitch)
-mov     x0, buffer_ptr
-mov     w1, #800
-mov     w2, #600
-mov     w3, pitch
-bl      _window_blit
-
-// Cleanup
-bl      _window_quit
+```bash
+make run
 ```
 
-### Keyboard Module (`platform/macos/keyboard.s`)
+## Project Structure
 
-```asm
-// Update key states (call each frame)
-bl      _keyboard_update
-
-// Get pointer to key state array
-bl      _keyboard_get_state
-mov     x2, x0
-
-// Check keys using KEY_* constants
-ldrb    w0, [x2, #KEY_UP]
-cbnz    w0, handle_up
-
-// Available: KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT
-//            KEY_ESCAPE, KEY_SPACE
-//            KEY_W, KEY_A, KEY_S, KEY_D, KEY_Q
-
-// Or check by Mac virtual keycode
-mov     w0, #0x7E              // kVK_UpArrow
-bl      _keyboard_is_pressed
+```
+maze_asm/
+├── include/
+│   └── constants.inc          # Shared constants and key mappings
+├── src/
+│   ├── demo.s                 # Main game loop and rendering
+│   ├── shared/
+│   │   ├── maze.s             # Maze generation (recursive backtracking)
+│   │   └── raster.s           # Software rasterizer (platform-independent)
+│   └── platform/
+│       └── macos/
+│           ├── window.s       # Cocoa window management
+│           ├── keyboard.s     # CoreGraphics keyboard input
+│           ├── timing.s       # Frame timing (usleep)
+│           └── print.s        # Console output (syscalls)
+├── build/                     # Compiled output
+├── Makefile
+└── README.md
 ```
 
-### Timing Module (`platform/macos/timing.s`)
+### Maze Algorithm
 
-```asm
-// Sleep for milliseconds
-mov     w0, #16                // ~60 FPS
-bl      _timing_sleep_ms
+The maze uses iterative backtracking (stack-based to avoid deep recursion):
 
-// Sleep for microseconds
-mov     w0, #16000
-bl      _timing_sleep_us
+1. Start with a grid of walls
+2. Pick starting cell, mark as path
+3. Randomly shuffle directions (N, E, S, W)
+4. For each direction, if cell 2 steps away is unvisited:
+   - Carve path to that cell
+   - Push current position to stack
+   - Move to new cell
+5. If no valid directions, pop from stack (backtrack)
+6. Repeat until stack is empty
+
+This generates a "perfect maze" - exactly one path between any two points.
+
+## Technical Details
+
+### Native Implementation Stack
+
+| Layer | Implementation |
+|-------|----------------|
+| Window | Cocoa (`NSApplication`, `NSWindow`, `NSView`, `CALayer`) |
+| Display | CoreGraphics (`CGImage`, `CGDataProvider`) |
+| Input | CoreGraphics (`CGEventSourceKeyState`) |
+| Drawing | Custom assembly (framebuffer manipulation) |
+| Timing | libc `usleep` |
+| Console | macOS syscall `SYS_WRITE` |
+
+### ARM64 Calling Convention
+
+```
+Arguments:     x0-x7 (w0-w7 for 32-bit)
+Return value:  x0
+Callee-saved:  x19-x28
+Frame pointer: x29
+Link register: x30
+Stack:         16-byte aligned
 ```
 
-### Raster Module (`shared/raster.s`)
+## Graphics Primitives
 
-```asm
-// Initialize framebuffer (width, height)
-mov     w0, #800
-mov     w1, #600
-bl      _raster_init
+The software rasterizer provides:
 
-// Set drawing color (R, G, B, A)
-mov     w0, #255
-mov     w1, #0
-mov     w2, #128
-mov     w3, #255
-bl      _raster_set_color
-
-// Clear framebuffer
-bl      _raster_clear
-
-// Plot pixel (x, y)
-mov     w0, #100
-mov     w1, #200
-bl      _raster_plot
-
-// Draw line (x0, y0, x1, y1)
-mov     w0, #0
-mov     w1, #0
-mov     w2, #400
-mov     w3, #300
-bl      _raster_line
-
-// Draw filled rectangle (x, y, width, height)
-mov     w0, #100
-mov     w1, #100
-mov     w2, #50
-mov     w3, #50
-bl      _raster_rect
-
-// Draw rectangle outline
-bl      _raster_rect_outline
-
-// Draw circle outline (cx, cy, radius)
-mov     w0, #400
-mov     w1, #300
-mov     w2, #100
-bl      _raster_circle
-
-// Draw filled circle
-bl      _raster_circle_filled
-
-// Get framebuffer pointer
-bl      _raster_get_buffer
-
-// Free framebuffer
-bl      _raster_free
-```
-
-## Adding Linux Support
-
-The project is structured for cross-platform support. To add Linux:
-
-1. Create `src/platform/linux/` directory
-2. Implement platform modules:
-   - `print.s` - Use Linux syscall numbers
-   - `keyboard.s` - Use X11 or evdev
-   - `window.s` - Use X11 or Wayland
-   - `timing.s` - Use Linux nanosleep
-3. Update Makefile with Linux target
-
-The `shared/raster.s` module is portable and needs no changes.
-
-## Architecture Notes
-
-ARM64 (Apple Silicon) calling convention:
-- Arguments: x0-x7 (w0-w7 for 32-bit)
-- Return value: x0
-- Callee-saved: x19-x28
-- Frame pointer: x29
-- Link register: x30
-- Stack: 16-byte aligned
+- `_raster_init` / `_raster_free` - Framebuffer management
+- `_raster_set_color` - Set RGBA drawing color
+- `_raster_clear` - Fill framebuffer with current color
+- `_raster_plot` - Draw single pixel
+- `_raster_line` - Bresenham's line algorithm
+- `_raster_rect` / `_raster_rect_outline` - Rectangles
+- `_raster_circle` / `_raster_circle_filled` - Midpoint circle algorithm
 
 ## License
 

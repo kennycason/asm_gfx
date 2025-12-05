@@ -38,7 +38,7 @@ PLATFORM_SRCS = $(PLATFORM_DIR)/print.s \
                 $(PLATFORM_DIR)/window.s \
                 $(PLATFORM_DIR)/timing.s
 
-SHARED_SRCS = $(SHARED_DIR)/raster.s
+SHARED_SRCS = $(SHARED_DIR)/raster.s $(SHARED_DIR)/maze.s
 
 DEMO_SRC = src/demo.s
 

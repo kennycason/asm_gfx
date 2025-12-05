@@ -31,11 +31,10 @@
 .set NSApplicationActivationPolicyRegular, 0
 
 // CGBitmapInfo values
-// Our raster outputs 0xAARRGGBB which is BGRA in memory (little-endian)
-// kCGImageAlphaPremultipliedLast = 1 (alpha at highest address)
-// kCGBitmapByteOrder32Little = 8192 (2 << 12)
-// Combined = 8193
-.set kCGBitmapInfo_BGRA,                8193
+// kCGImageAlphaNoneSkipFirst = 6 (XRGB, ignore alpha, RGB in bytes 1-3)
+// kCGBitmapByteOrder32Big = 16384 (4 << 12) - read as big-endian
+// This expects 0xXXRRGGBB format which we output
+.set kCGBitmapInfo_XRGB,                16390
 
 // ============================================================================
 // _window_init - Initialize Cocoa and create window
@@ -264,7 +263,7 @@ _window_blit:
     mov     x3, #32                  // bitsPerPixel
     mov     x4, x22                  // bytesPerRow
     mov     x5, x23                  // colorspace
-    mov     x6, #kCGBitmapInfo_BGRA  // bitmapInfo
+    mov     x6, #kCGBitmapInfo_XRGB  // bitmapInfo
     mov     x7, x24                  // provider
     // Remaining args on stack
     sub     sp, sp, #32

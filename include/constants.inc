@@ -1,14 +1,12 @@
 // ============================================================================
-// constants.inc - Shared constants for the graphics library
+// constants.inc - Shared constants for Maze ASM
+// ============================================================================
+// Central configuration for window, colors, keyboard, and system calls.
 // ============================================================================
 
-// Window settings
-.set WINDOW_WIDTH,      800
-.set WINDOW_HEIGHT,     600
-
-// Shape defaults
-.set DEFAULT_SQUARE_SIZE,   50
-.set MOVE_SPEED,            10
+// Window dimensions (41x31 tiles @ 16px each)
+.set WINDOW_WIDTH,      656
+.set WINDOW_HEIGHT,     496
 
 // Colors (ARGB format)
 .set COLOR_BLACK,       0xFF000000
@@ -32,11 +30,7 @@
 .set KEY_S,         8
 .set KEY_D,         9
 .set KEY_Q,         10
-
-// SDL event types (events.s)
-.set SDL_INIT_VIDEO,        0x00000020
-.set SDL_WINDOW_SHOWN,      0x00000004
-.set SDL_QUIT,              0x100
+.set KEY_R,         11
 
 // macOS system calls (ARM64)
 .set SYS_EXIT,              1

@@ -1,7 +1,7 @@
 // ============================================================================
 // raster.s - Software rasterization engine
 // ============================================================================
-// Our own pixel-level drawing routines. No SDL drawing calls here!
+// Software rasterizer with pixel-level drawing routines.
 // 
 // Functions:
 //   raster_init       - Allocate framebuffer
@@ -168,7 +168,7 @@ _raster_clear:
     ldr     x19, [x19]
     cbz     x19, clear_done
     
-    // Build pixel value (ARGB format for SDL)
+    // Build pixel value (0xAARRGGBB format)
     adrp    x0, _current_a@PAGE
     add     x0, x0, _current_a@PAGEOFF
     ldrb    w0, [x0]
@@ -246,7 +246,7 @@ _raster_plot:
     add     x4, x4, _framebuffer@PAGEOFF
     ldr     x4, [x4]
     
-    // Build pixel (ARGB)
+    // Build pixel (0xAARRGGBB format)
     adrp    x5, _current_a@PAGE
     add     x5, x5, _current_a@PAGEOFF
     ldrb    w5, [x5]
