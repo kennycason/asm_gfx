@@ -1,8 +1,7 @@
 // ============================================================================
-// keyboard.s - Native macOS keyboard handling (no SDL!)
+// keyboard.s - Native macOS keyboard handling
 // ============================================================================
 // Uses CoreGraphics CGEventSourceKeyState to directly query keyboard.
-// No dependency on SDL event loop for key state!
 //
 // Functions:
 //   keyboard_is_pressed  - Check if a key is currently pressed
@@ -20,7 +19,7 @@
 .text
 
 // ============================================================================
-// Mac Virtual Key Codes (different from SDL scancodes!)
+// Mac Virtual Key Codes
 // ============================================================================
 .set kVK_ANSI_A,            0x00
 .set kVK_ANSI_S,            0x01

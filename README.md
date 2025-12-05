@@ -2,32 +2,31 @@
 
 ![Screenshot](screenshot.png)
 
-A minimal graphics library written in ARM64 assembly for macOS, featuring a **custom software rasterizer**. SDL2 is used only for window/input — all drawing is done pixel-by-pixel in our own code!
+A minimal graphics library written in ARM64 assembly for macOS, featuring a custom software rasterizer and native keyboard input.
 
 ## Features
 
-- **Software Rasterizer**: Our own framebuffer and pixel-level drawing
+- **Software Rasterizer**: Custom framebuffer with pixel-level drawing
 - **Classic Algorithms**: Bresenham's line, midpoint circle
-- **Native Keyboard**: Direct keyboard via CoreGraphics (no SDL input!)
-- **Console Printing**: Print strings, integers, and hex values via syscalls
-- **Window Management**: SDL2 for window creation and blitting only
+- **Native Keyboard**: Direct input via CoreGraphics
+- **Console Printing**: Strings, integers, hex via syscalls
+- **Window Management**: SDL2 for window creation and display
 
 ## Project Structure
 
 ```
 asm_gfx/
 ├── include/
-│   └── constants.inc    # Shared constants and SDL defines
+│   └── constants.inc    # Shared constants
 ├── src/
 │   ├── lib/
-│   │   ├── print.s      # Console printing utilities
-│   │   ├── window.s     # Window/renderer management (SDL2)
-│   │   ├── draw.s       # SDL drawing primitives (legacy)
-│   │   ├── input.s      # SDL input (legacy, kept for window events)
-│   │   ├── raster.s     # ★ Software rasterizer (our code!)
-│   │   └── keyboard.s   # ★ Native keyboard (CoreGraphics, no SDL!)
-│   └── demo.s           # Demo entry point
-├── build/               # Build output (created by make)
+│   │   ├── print.s      # Console output
+│   │   ├── window.s     # Window management
+│   │   ├── events.s     # Window events
+│   │   ├── keyboard.s   # Native keyboard input
+│   │   └── raster.s     # Software rasterizer
+│   └── demo.s           # Demo application
+├── build/               # Build output
 ├── Makefile
 └── README.md
 ```
@@ -97,57 +96,39 @@ bl      _print_hex
 ### Window Module (`window.s`)
 
 ```asm
-// Initialize (title, width, height)
+// Initialize window (title, width, height)
 adrp    x0, title@PAGE
 add     x0, x0, title@PAGEOFF
 mov     w1, #800
 mov     w2, #600
 bl      _gfx_init
 
-// Set draw color (R, G, B, A)
-mov     w0, #255
-mov     w1, #0
-mov     w2, #0
-mov     w3, #255
-bl      _gfx_set_color
+// Create texture for framebuffer blitting
+mov     w0, #800
+mov     w1, #600
+bl      _gfx_create_texture
 
-// Clear and present
-bl      _gfx_clear
-bl      _gfx_present
+// Blit framebuffer to screen
+mov     x0, buffer_ptr
+mov     w1, pitch
+bl      _gfx_blit
 
 // Cleanup
 bl      _gfx_quit
 ```
 
-### Draw Module (`draw.s`)
+### Events Module (`events.s`)
 
 ```asm
-// Filled rectangle (x, y, w, h)
-mov     w0, #100
-mov     w1, #100
-mov     w2, #50
-mov     w3, #50
-bl      _draw_rect
+// Poll window events (call each frame)
+bl      _events_poll
 
-// Rectangle outline
-bl      _draw_rect_outline
-
-// Line (x1, y1, x2, y2)
-mov     w0, #0
-mov     w1, #0
-mov     w2, #100
-mov     w3, #100
-bl      _draw_line
-
-// Single point (x, y)
-mov     w0, #50
-mov     w1, #50
-bl      _draw_point
+// Check if window close was requested
+bl      _events_should_quit
+cbnz    w0, exit_loop
 ```
 
-### Keyboard Module (`keyboard.s`) ★ Native Input
-
-Uses CoreGraphics `CGEventSourceKeyState` - no SDL dependency!
+### Keyboard Module (`keyboard.s`)
 
 ```asm
 // Update key states (call each frame)
@@ -157,38 +138,24 @@ bl      _keyboard_update
 bl      _keyboard_get_state
 mov     x2, x0
 
-// Check specific keys using KEY_* constants
+// Check keys using KEY_* constants
 ldrb    w0, [x2, #KEY_UP]
 cbnz    w0, handle_up
 
 ldrb    w0, [x2, #KEY_ESCAPE]
 cbnz    w0, quit_game
 
-// Available key constants:
-// KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT
-// KEY_ESCAPE, KEY_SPACE
-// KEY_W, KEY_A, KEY_S, KEY_D, KEY_Q
+// Available: KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT
+//            KEY_ESCAPE, KEY_SPACE
+//            KEY_W, KEY_A, KEY_S, KEY_D, KEY_Q
 
-// Or check individual key directly (Mac virtual keycode)
+// Or check individual key by Mac virtual keycode
 mov     w0, #0x7E              // kVK_UpArrow
 bl      _keyboard_is_pressed
 cbnz    w0, up_is_pressed
 ```
 
-### Legacy Input Module (`input.s`)
-
-Still used for window close events only:
-
-```asm
-// Poll SDL events (for window close button)
-bl      _input_poll
-
-// Check if window was closed
-bl      _input_should_quit
-cbnz    w0, exit_loop
-```
-
-### Raster Module (`raster.s`) ★ Software Renderer
+### Raster Module (`raster.s`)
 
 ```asm
 // Initialize framebuffer (width, height)
@@ -203,7 +170,7 @@ mov     w2, #128
 mov     w3, #255
 bl      _raster_set_color
 
-// Clear entire framebuffer with current color
+// Clear framebuffer with current color
 bl      _raster_clear
 
 // Plot single pixel (x, y)
@@ -237,12 +204,8 @@ bl      _raster_circle
 // Draw filled circle
 bl      _raster_circle_filled
 
-// Blit framebuffer to screen
+// Get framebuffer for blitting
 bl      _raster_get_buffer   // x0 = buffer ptr
-adrp    x1, _fb_pitch@PAGE
-add     x1, x1, _fb_pitch@PAGEOFF
-ldr     w1, [x1]             // w1 = pitch
-bl      _gfx_blit
 
 // Free framebuffer on exit
 bl      _raster_free
@@ -252,22 +215,20 @@ bl      _raster_free
 
 Key constants available:
 - `WINDOW_WIDTH`, `WINDOW_HEIGHT`
-- `COLOR_*` (BLACK, WHITE, RED, GREEN, BLUE, etc.)
-- `SDL_SCANCODE_*` (UP, DOWN, LEFT, RIGHT, ESCAPE)
+- `KEY_UP`, `KEY_DOWN`, `KEY_LEFT`, `KEY_RIGHT`, `KEY_ESCAPE`, etc.
 - `MOVE_SPEED`, `DEFAULT_SQUARE_SIZE`
 
 ## Extending the Library
 
 ### Adding New Shapes
 
-Add functions to `draw.s`:
+Add functions to `raster.s`:
 
 ```asm
-.global _draw_circle
+.global _raster_triangle
 
-_draw_circle:
-    // Your implementation using SDL_RenderDrawPoint
-    // for each pixel on the circle
+_raster_triangle:
+    // Your implementation
     ret
 ```
 
@@ -299,4 +260,3 @@ This library targets ARM64 (Apple Silicon). Key calling convention details:
 ## License
 
 MIT
-
