@@ -2,11 +2,13 @@
 // window.s - Window management (SDL2 wrapper)
 // ============================================================================
 // Functions:
-//   gfx_init      - Initialize graphics system
-//   gfx_quit      - Shutdown graphics system
-//   gfx_clear     - Clear the window with a color
-//   gfx_present   - Present the rendered frame
-//   gfx_set_color - Set the current drawing color
+//   gfx_init        - Initialize graphics system
+//   gfx_quit        - Shutdown graphics system
+//   gfx_clear       - Clear the window with a color
+//   gfx_present     - Present the rendered frame
+//   gfx_set_color   - Set the current drawing color
+//   gfx_create_texture - Create streaming texture for software rendering
+//   gfx_blit        - Copy framebuffer to screen
 // ============================================================================
 
 .global _gfx_init
@@ -14,8 +16,11 @@
 .global _gfx_clear
 .global _gfx_present
 .global _gfx_set_color
+.global _gfx_create_texture
+.global _gfx_blit
 .global _gfx_window
 .global _gfx_renderer
+.global _gfx_texture
 
 .include "include/constants.inc"
 
@@ -86,6 +91,95 @@ init_done:
     ret
 
 // ============================================================================
+// _gfx_create_texture - Create streaming texture for software rendering
+// Input:  w0 = width
+//         w1 = height
+// Output: x0 = texture pointer, or 0 on failure
+// ============================================================================
+.align 4
+_gfx_create_texture:
+    stp     x29, x30, [sp, #-16]!
+    mov     x29, sp
+    stp     x19, x20, [sp, #-16]!
+    
+    mov     w19, w0                  // Save width
+    mov     w20, w1                  // Save height
+    
+    // SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, w, h)
+    adrp    x0, _gfx_renderer@PAGE
+    add     x0, x0, _gfx_renderer@PAGEOFF
+    ldr     x0, [x0]
+    
+    // SDL_PIXELFORMAT_ARGB8888 = 0x16362004
+    mov     w1, #0x2004
+    movk    w1, #0x1636, lsl #16
+    
+    mov     w2, #1                   // SDL_TEXTUREACCESS_STREAMING
+    mov     w3, w19                  // width
+    mov     w4, w20                  // height
+    bl      _SDL_CreateTexture
+    
+    // Store texture pointer
+    adrp    x1, _gfx_texture@PAGE
+    add     x1, x1, _gfx_texture@PAGEOFF
+    str     x0, [x1]
+    
+    ldp     x19, x20, [sp], #16
+    ldp     x29, x30, [sp], #16
+    ret
+
+// ============================================================================
+// _gfx_blit - Copy framebuffer to screen
+// Input:  x0 = pointer to pixel data
+//         w1 = pitch (bytes per row)
+// Output: none
+// ============================================================================
+.align 4
+_gfx_blit:
+    stp     x29, x30, [sp, #-16]!
+    mov     x29, sp
+    stp     x19, x20, [sp, #-16]!
+    
+    mov     x19, x0                  // Save pixel data pointer
+    mov     w20, w1                  // Save pitch
+    
+    // SDL_UpdateTexture(texture, NULL, pixels, pitch)
+    adrp    x0, _gfx_texture@PAGE
+    add     x0, x0, _gfx_texture@PAGEOFF
+    ldr     x0, [x0]
+    mov     x1, #0                   // NULL rect = full texture
+    mov     x2, x19                  // pixels
+    mov     w3, w20                  // pitch
+    bl      _SDL_UpdateTexture
+    
+    // SDL_RenderClear(renderer)
+    adrp    x0, _gfx_renderer@PAGE
+    add     x0, x0, _gfx_renderer@PAGEOFF
+    ldr     x0, [x0]
+    bl      _SDL_RenderClear
+    
+    // SDL_RenderCopy(renderer, texture, NULL, NULL)
+    adrp    x0, _gfx_renderer@PAGE
+    add     x0, x0, _gfx_renderer@PAGEOFF
+    ldr     x0, [x0]
+    adrp    x1, _gfx_texture@PAGE
+    add     x1, x1, _gfx_texture@PAGEOFF
+    ldr     x1, [x1]
+    mov     x2, #0                   // NULL src rect
+    mov     x3, #0                   // NULL dst rect
+    bl      _SDL_RenderCopy
+    
+    // SDL_RenderPresent(renderer)
+    adrp    x0, _gfx_renderer@PAGE
+    add     x0, x0, _gfx_renderer@PAGEOFF
+    ldr     x0, [x0]
+    bl      _SDL_RenderPresent
+    
+    ldp     x19, x20, [sp], #16
+    ldp     x29, x30, [sp], #16
+    ret
+
+// ============================================================================
 // _gfx_quit - Cleanup and shutdown SDL2
 // Input:  none
 // Output: none
@@ -95,22 +189,30 @@ _gfx_quit:
     stp     x29, x30, [sp, #-16]!
     mov     x29, sp
     
+    // Destroy texture
+    adrp    x0, _gfx_texture@PAGE
+    add     x0, x0, _gfx_texture@PAGEOFF
+    ldr     x0, [x0]
+    cbz     x0, 1f
+    bl      _SDL_DestroyTexture
+    
+1:
     // Destroy renderer
     adrp    x0, _gfx_renderer@PAGE
     add     x0, x0, _gfx_renderer@PAGEOFF
     ldr     x0, [x0]
-    cbz     x0, 1f
+    cbz     x0, 2f
     bl      _SDL_DestroyRenderer
     
-1:
+2:
     // Destroy window
     adrp    x0, _gfx_window@PAGE
     add     x0, x0, _gfx_window@PAGEOFF
     ldr     x0, [x0]
-    cbz     x0, 2f
+    cbz     x0, 3f
     bl      _SDL_DestroyWindow
     
-2:
+3:
     // SDL_Quit
     bl      _SDL_Quit
     
@@ -196,4 +298,4 @@ _gfx_set_color:
 .align 8
 _gfx_window:    .quad 0
 _gfx_renderer:  .quad 0
-
+_gfx_texture:   .quad 0

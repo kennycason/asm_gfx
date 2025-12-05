@@ -1,12 +1,15 @@
 # ASM Graphics Library
 
-A minimal graphics library written in ARM64 assembly for macOS, using SDL2 for window management and rendering.
+![Screenshot](screenshot.png)
+
+A minimal graphics library written in ARM64 assembly for macOS, featuring a **custom software rasterizer**. SDL2 is used only for window/input — all drawing is done pixel-by-pixel in our own code!
 
 ## Features
 
-- **Console Printing**: Print strings, integers, and hex values directly via syscalls
-- **Window Management**: Create windows, clear, and present frames
-- **Drawing Primitives**: Rectangles (filled/outline), lines, and points
+- **Software Rasterizer**: Our own framebuffer and pixel-level drawing
+- **Classic Algorithms**: Bresenham's line, midpoint circle
+- **Console Printing**: Print strings, integers, and hex values via syscalls
+- **Window Management**: SDL2 for window creation and blitting
 - **Input Handling**: Keyboard input with key state tracking
 
 ## Project Structure
@@ -19,8 +22,9 @@ asm_gfx/
 │   ├── lib/
 │   │   ├── print.s      # Console printing utilities
 │   │   ├── window.s     # Window/renderer management (SDL2)
-│   │   ├── draw.s       # Drawing primitives
-│   │   └── input.s      # Keyboard input handling
+│   │   ├── draw.s       # SDL drawing primitives (legacy)
+│   │   ├── input.s      # Keyboard input handling
+│   │   └── raster.s     # ★ Software rasterizer (our code!)
 │   └── demo.s           # Demo entry point
 ├── build/               # Build output (created by make)
 ├── Makefile
@@ -155,6 +159,66 @@ adrp    x0, _input_key_state@PAGE
 add     x0, x0, _input_key_state@PAGEOFF
 ldrb    w1, [x0, #SDL_SCANCODE_UP]
 cbnz    w1, handle_up_pressed
+```
+
+### Raster Module (`raster.s`) ★ Software Renderer
+
+```asm
+// Initialize framebuffer (width, height)
+mov     w0, #800
+mov     w1, #600
+bl      _raster_init
+
+// Set drawing color (R, G, B, A)
+mov     w0, #255
+mov     w1, #0
+mov     w2, #128
+mov     w3, #255
+bl      _raster_set_color
+
+// Clear entire framebuffer with current color
+bl      _raster_clear
+
+// Plot single pixel (x, y)
+mov     w0, #100
+mov     w1, #200
+bl      _raster_plot
+
+// Draw line - Bresenham's algorithm (x0, y0, x1, y1)
+mov     w0, #0
+mov     w1, #0
+mov     w2, #400
+mov     w3, #300
+bl      _raster_line
+
+// Draw filled rectangle (x, y, width, height)
+mov     w0, #100
+mov     w1, #100
+mov     w2, #50
+mov     w3, #50
+bl      _raster_rect
+
+// Draw rectangle outline
+bl      _raster_rect_outline
+
+// Draw circle outline - midpoint algorithm (cx, cy, radius)
+mov     w0, #400
+mov     w1, #300
+mov     w2, #100
+bl      _raster_circle
+
+// Draw filled circle
+bl      _raster_circle_filled
+
+// Blit framebuffer to screen
+bl      _raster_get_buffer   // x0 = buffer ptr
+adrp    x1, _fb_pitch@PAGE
+add     x1, x1, _fb_pitch@PAGEOFF
+ldr     w1, [x1]             // w1 = pitch
+bl      _gfx_blit
+
+// Free framebuffer on exit
+bl      _raster_free
 ```
 
 ## Constants (`constants.inc`)

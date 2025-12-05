@@ -1,10 +1,11 @@
 // ============================================================================
-// demo.s - Demo entry point: Movable square with arrow keys
+// demo.s - Demo entry point: Software rendered movable square
 // ============================================================================
-// A simple demo showing:
-//   - Window creation
-//   - Drawing a colored square
-//   - Moving with arrow keys
+// A demo showing our custom software rasterizer:
+//   - Our own framebuffer
+//   - Our own pixel plotting
+//   - Our own shape drawing (rect, circle, line)
+//   - Arrow keys to move
 //   - ESC or window close to quit
 // ============================================================================
 
@@ -28,7 +29,7 @@ _main:
     bl      _print_str
     bl      _print_newline
     
-    // Initialize graphics
+    // Initialize graphics (SDL window)
     adrp    x0, window_title@PAGE
     add     x0, x0, window_title@PAGEOFF
     mov     w1, #WINDOW_WIDTH
@@ -39,7 +40,6 @@ _main:
     cmp     x0, #0
     b.eq    init_ok
     
-    // Print error and exit
     adrp    x0, msg_error@PAGE
     add     x0, x0, msg_error@PAGEOFF
     bl      _print_str
@@ -48,6 +48,18 @@ _main:
     b       exit_program
     
 init_ok:
+    // Create texture for blitting
+    mov     w0, #WINDOW_WIDTH
+    mov     w1, #WINDOW_HEIGHT
+    bl      _gfx_create_texture
+    cbz     x0, texture_failed
+    
+    // Initialize our software rasterizer framebuffer
+    mov     w0, #WINDOW_WIDTH
+    mov     w1, #WINDOW_HEIGHT
+    bl      _raster_init
+    cbz     x0, raster_failed
+    
     adrp    x0, msg_ready@PAGE
     add     x0, x0, msg_ready@PAGEOFF
     bl      _print_str
@@ -63,6 +75,11 @@ init_ok:
     add     x0, x0, square_y@PAGEOFF
     mov     w1, #((WINDOW_HEIGHT - DEFAULT_SQUARE_SIZE) / 2)
     str     w1, [x0]
+    
+    // Initialize animation counter
+    adrp    x0, frame_count@PAGE
+    add     x0, x0, frame_count@PAGEOFF
+    str     wzr, [x0]
 
 // ============================================================================
 // Main game loop
@@ -78,68 +95,159 @@ game_loop:
     // Handle movement
     bl      handle_movement
     
-    // Clear screen (dark blue background)
-    mov     w0, #25                  // R
-    mov     w1, #25                  // G
-    mov     w2, #45                  // B
-    mov     w3, #255                 // A
-    bl      _gfx_set_color
-    bl      _gfx_clear
+    // Increment frame counter
+    adrp    x0, frame_count@PAGE
+    add     x0, x0, frame_count@PAGEOFF
+    ldr     w1, [x0]
+    add     w1, w1, #1
+    str     w1, [x0]
     
-    // Draw the square (bright cyan)
-    mov     w0, #0                   // R
-    mov     w1, #255                 // G
-    mov     w2, #220                 // B
+    // ========== SOFTWARE RENDERING STARTS HERE ==========
+    
+    // Clear framebuffer (dark background)
+    mov     w0, #20                  // R
+    mov     w1, #22                  // G
+    mov     w2, #30                  // B
     mov     w3, #255                 // A
-    bl      _gfx_set_color
+    bl      _raster_set_color
+    bl      _raster_clear
+    
+    // Draw some decorative circles in background
+    mov     w0, #40                  // R
+    mov     w1, #45                  // G
+    mov     w2, #60                  // B
+    mov     w3, #255                 // A
+    bl      _raster_set_color
+    
+    mov     w0, #150                 // cx
+    mov     w1, #150                 // cy
+    mov     w2, #80                  // radius
+    bl      _raster_circle
+    
+    mov     w0, #650                 // cx
+    mov     w1, #450                 // cy
+    mov     w2, #100                 // radius
+    bl      _raster_circle
+    
+    // Draw diagonal lines
+    mov     w0, #60                  // R
+    mov     w1, #65                  // G
+    mov     w2, #80                  // B
+    mov     w3, #255                 // A
+    bl      _raster_set_color
+    
+    mov     w0, #0
+    mov     w1, #0
+    mov     w2, #200
+    mov     w3, #150
+    bl      _raster_line
+    
+    mov     w0, #800
+    mov     w1, #0
+    mov     w2, #600
+    mov     w3, #150
+    bl      _raster_line
+    
+    // Draw the main square (filled, bright cyan)
+    mov     w0, #0                   // R
+    mov     w1, #230                 // G
+    mov     w2, #200                 // B
+    mov     w3, #255                 // A
+    bl      _raster_set_color
     
     // Load square position
-    adrp    x0, square_x@PAGE
-    add     x0, x0, square_x@PAGEOFF
-    ldr     w0, [x0]
-    adrp    x1, square_y@PAGE
-    add     x1, x1, square_y@PAGEOFF
-    ldr     w1, [x1]
+    adrp    x4, square_x@PAGE
+    add     x4, x4, square_x@PAGEOFF
+    ldr     w0, [x4]
+    adrp    x4, square_y@PAGE
+    add     x4, x4, square_y@PAGEOFF
+    ldr     w1, [x4]
     mov     w2, #DEFAULT_SQUARE_SIZE
     mov     w3, #DEFAULT_SQUARE_SIZE
-    bl      _draw_rect
+    bl      _raster_rect
     
-    // Draw outline (white)
+    // Draw square outline (white)
     mov     w0, #255                 // R
     mov     w1, #255                 // G
     mov     w2, #255                 // B
     mov     w3, #255                 // A
-    bl      _gfx_set_color
+    bl      _raster_set_color
     
-    adrp    x0, square_x@PAGE
-    add     x0, x0, square_x@PAGEOFF
-    ldr     w0, [x0]
-    adrp    x1, square_y@PAGE
-    add     x1, x1, square_y@PAGEOFF
-    ldr     w1, [x1]
+    adrp    x4, square_x@PAGE
+    add     x4, x4, square_x@PAGEOFF
+    ldr     w0, [x4]
+    adrp    x4, square_y@PAGE
+    add     x4, x4, square_y@PAGEOFF
+    ldr     w1, [x4]
     mov     w2, #DEFAULT_SQUARE_SIZE
     mov     w3, #DEFAULT_SQUARE_SIZE
-    bl      _draw_rect_outline
+    bl      _raster_rect_outline
     
-    // Present frame
-    bl      _gfx_present
+    // Draw a filled circle that follows the square
+    mov     w0, #255                 // R
+    mov     w1, #100                 // G
+    mov     w2, #100                 // B
+    mov     w3, #255                 // A
+    bl      _raster_set_color
     
-    // Small delay to avoid busy loop (SDL vsync should handle this)
+    adrp    x4, square_x@PAGE
+    add     x4, x4, square_x@PAGEOFF
+    ldr     w0, [x4]
+    add     w0, w0, #(DEFAULT_SQUARE_SIZE / 2)  // Center x
+    adrp    x4, square_y@PAGE
+    add     x4, x4, square_y@PAGEOFF
+    ldr     w1, [x4]
+    sub     w1, w1, #30              // Above the square
+    mov     w2, #15                  // radius
+    bl      _raster_circle_filled
+    
+    // ========== BLIT TO SCREEN ==========
+    
+    // Get framebuffer and pitch
+    bl      _raster_get_buffer
+    mov     x19, x0                  // Save buffer pointer
+    
+    adrp    x0, _fb_pitch@PAGE
+    add     x0, x0, _fb_pitch@PAGEOFF
+    ldr     w1, [x0]                 // pitch
+    
+    mov     x0, x19                  // buffer
+    bl      _gfx_blit
+    
+    // Small delay
     mov     w0, #16                  // ~60 FPS
     bl      _SDL_Delay
     
     b       game_loop
+
+texture_failed:
+raster_failed:
+    adrp    x0, msg_error@PAGE
+    add     x0, x0, msg_error@PAGEOFF
+    bl      _print_str
+    bl      _print_newline
+    mov     w0, #1
+    b       cleanup
 
 quit_game:
     adrp    x0, msg_quit@PAGE
     add     x0, x0, msg_quit@PAGEOFF
     bl      _print_str
     bl      _print_newline
+    mov     w0, #0
     
-    // Cleanup
+cleanup:
+    stp     x19, x20, [sp, #-16]!
+    mov     w19, w0                  // Save exit code
+    
+    // Free rasterizer
+    bl      _raster_free
+    
+    // Cleanup SDL
     bl      _gfx_quit
     
-    mov     w0, #0                   // Success exit code
+    mov     w0, w19                  // Restore exit code
+    ldp     x19, x20, [sp], #16
     
 exit_program:
     ldp     x29, x30, [sp], #16
@@ -213,10 +321,10 @@ movement_done:
 .align 4
 square_x:       .word 0
 square_y:       .word 0
+frame_count:    .word 0
 
-window_title:   .asciz "ASM Graphics Demo"
-msg_init:       .asciz "[INFO] Initializing graphics system..."
-msg_ready:      .asciz "[INFO] Ready! Use arrow keys to move, ESC to quit."
-msg_error:      .asciz "[ERROR] Failed to initialize graphics!"
+window_title:   .asciz "ASM Software Rasterizer Demo"
+msg_init:       .asciz "[INFO] Initializing software rasterizer..."
+msg_ready:      .asciz "[INFO] Ready! Arrow keys to move, ESC to quit."
+msg_error:      .asciz "[ERROR] Failed to initialize!"
 msg_quit:       .asciz "[INFO] Shutting down..."
-

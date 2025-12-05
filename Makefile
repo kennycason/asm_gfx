@@ -33,7 +33,7 @@ INC_DIR = include
 BUILD_DIR = build
 
 # Source files
-LIB_SRCS = $(LIB_DIR)/print.s $(LIB_DIR)/window.s $(LIB_DIR)/draw.s $(LIB_DIR)/input.s
+LIB_SRCS = $(LIB_DIR)/print.s $(LIB_DIR)/window.s $(LIB_DIR)/draw.s $(LIB_DIR)/input.s $(LIB_DIR)/raster.s
 DEMO_SRC = $(SRC_DIR)/demo.s
 
 # Object files
