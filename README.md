@@ -2,58 +2,52 @@
 
 ![Screenshot](screenshot.png)
 
-A minimal graphics library written in ARM64 assembly for macOS, featuring a custom software rasterizer and native keyboard input.
+A minimal graphics library written in ARM64 assembly for macOS using native system frameworks.
 
 ## Features
 
 - **Software Rasterizer**: Custom framebuffer with pixel-level drawing
 - **Classic Algorithms**: Bresenham's line, midpoint circle
+- **Native Window**: Cocoa window via Objective-C runtime
 - **Native Keyboard**: Direct input via CoreGraphics
-- **Console Printing**: Strings, integers, hex via syscalls
-- **Window Management**: SDL2 for window creation and display
+- **Native Timing**: System nanosleep for frame timing
+- **Console Output**: Strings, integers, hex via syscalls
 
 ## Project Structure
 
 ```
 asm_gfx/
 ├── include/
-│   └── constants.inc    # Shared constants
+│   └── constants.inc         # Shared constants
 ├── src/
-│   ├── lib/
-│   │   ├── print.s      # Console output
-│   │   ├── window.s     # Window management
-│   │   ├── events.s     # Window events
-│   │   ├── keyboard.s   # Native keyboard input
-│   │   └── raster.s     # Software rasterizer
-│   └── demo.s           # Demo application
-├── build/               # Build output
+│   ├── shared/
+│   │   └── raster.s          # Software rasterizer (portable)
+│   ├── platform/
+│   │   └── macos/
+│   │       ├── print.s       # Console output (syscalls)
+│   │       ├── keyboard.s    # Keyboard input (CoreGraphics)
+│   │       ├── window.s      # Window management (Cocoa)
+│   │       └── timing.s      # Sleep/timing (nanosleep)
+│   └── demo.s                # Demo application
+├── build/                    # Build output
 ├── Makefile
 └── README.md
 ```
 
 ## Requirements
 
-- macOS (Apple Silicon or Intel)
+- macOS (Apple Silicon)
 - Xcode Command Line Tools
-- SDL2 library
 
 ## Quick Start
 
-### 1. Install SDL2
-
-```bash
-make install-sdl
-# or manually:
-brew install sdl2
-```
-
-### 2. Build
+### Build
 
 ```bash
 make
 ```
 
-### 3. Run
+### Run
 
 ```bash
 make run
@@ -73,15 +67,13 @@ make run
 
 ## Library API
 
-### Print Module (`print.s`)
+### Print Module (`platform/macos/print.s`)
 
 ```asm
 // Print a null-terminated string
 adrp    x0, my_string@PAGE
 add     x0, x0, my_string@PAGEOFF
 bl      _print_str
-
-// Print newline
 bl      _print_newline
 
 // Print integer
@@ -93,7 +85,7 @@ mov     x0, #0xDEADBEEF
 bl      _print_hex
 ```
 
-### Window Module (`window.s`)
+### Window Module (`platform/macos/window.s`)
 
 ```asm
 // Initialize window (title, width, height)
@@ -101,34 +93,27 @@ adrp    x0, title@PAGE
 add     x0, x0, title@PAGEOFF
 mov     w1, #800
 mov     w2, #600
-bl      _gfx_init
+bl      _window_init
 
-// Create texture for framebuffer blitting
-mov     w0, #800
-mov     w1, #600
-bl      _gfx_create_texture
+// Poll events (call each frame)
+bl      _window_poll
 
-// Blit framebuffer to screen
+// Check if window should close
+bl      _window_should_close
+cbnz    w0, exit_loop
+
+// Blit framebuffer to window (buffer, width, height, pitch)
 mov     x0, buffer_ptr
-mov     w1, pitch
-bl      _gfx_blit
+mov     w1, #800
+mov     w2, #600
+mov     w3, pitch
+bl      _window_blit
 
 // Cleanup
-bl      _gfx_quit
+bl      _window_quit
 ```
 
-### Events Module (`events.s`)
-
-```asm
-// Poll window events (call each frame)
-bl      _events_poll
-
-// Check if window close was requested
-bl      _events_should_quit
-cbnz    w0, exit_loop
-```
-
-### Keyboard Module (`keyboard.s`)
+### Keyboard Module (`platform/macos/keyboard.s`)
 
 ```asm
 // Update key states (call each frame)
@@ -142,20 +127,28 @@ mov     x2, x0
 ldrb    w0, [x2, #KEY_UP]
 cbnz    w0, handle_up
 
-ldrb    w0, [x2, #KEY_ESCAPE]
-cbnz    w0, quit_game
-
 // Available: KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT
 //            KEY_ESCAPE, KEY_SPACE
 //            KEY_W, KEY_A, KEY_S, KEY_D, KEY_Q
 
-// Or check individual key by Mac virtual keycode
+// Or check by Mac virtual keycode
 mov     w0, #0x7E              // kVK_UpArrow
 bl      _keyboard_is_pressed
-cbnz    w0, up_is_pressed
 ```
 
-### Raster Module (`raster.s`)
+### Timing Module (`platform/macos/timing.s`)
+
+```asm
+// Sleep for milliseconds
+mov     w0, #16                // ~60 FPS
+bl      _timing_sleep_ms
+
+// Sleep for microseconds
+mov     w0, #16000
+bl      _timing_sleep_us
+```
+
+### Raster Module (`shared/raster.s`)
 
 ```asm
 // Initialize framebuffer (width, height)
@@ -170,15 +163,15 @@ mov     w2, #128
 mov     w3, #255
 bl      _raster_set_color
 
-// Clear framebuffer with current color
+// Clear framebuffer
 bl      _raster_clear
 
-// Plot single pixel (x, y)
+// Plot pixel (x, y)
 mov     w0, #100
 mov     w1, #200
 bl      _raster_plot
 
-// Draw line - Bresenham's algorithm (x0, y0, x1, y1)
+// Draw line (x0, y0, x1, y1)
 mov     w0, #0
 mov     w1, #0
 mov     w2, #400
@@ -195,7 +188,7 @@ bl      _raster_rect
 // Draw rectangle outline
 bl      _raster_rect_outline
 
-// Draw circle outline - midpoint algorithm (cx, cy, radius)
+// Draw circle outline (cx, cy, radius)
 mov     w0, #400
 mov     w1, #300
 mov     w2, #100
@@ -204,58 +197,36 @@ bl      _raster_circle
 // Draw filled circle
 bl      _raster_circle_filled
 
-// Get framebuffer for blitting
-bl      _raster_get_buffer   // x0 = buffer ptr
+// Get framebuffer pointer
+bl      _raster_get_buffer
 
-// Free framebuffer on exit
+// Free framebuffer
 bl      _raster_free
 ```
 
-## Constants (`constants.inc`)
+## Adding Linux Support
 
-Key constants available:
-- `WINDOW_WIDTH`, `WINDOW_HEIGHT`
-- `KEY_UP`, `KEY_DOWN`, `KEY_LEFT`, `KEY_RIGHT`, `KEY_ESCAPE`, etc.
-- `MOVE_SPEED`, `DEFAULT_SQUARE_SIZE`
+The project is structured for cross-platform support. To add Linux:
 
-## Extending the Library
+1. Create `src/platform/linux/` directory
+2. Implement platform modules:
+   - `print.s` - Use Linux syscall numbers
+   - `keyboard.s` - Use X11 or evdev
+   - `window.s` - Use X11 or Wayland
+   - `timing.s` - Use Linux nanosleep
+3. Update Makefile with Linux target
 
-### Adding New Shapes
-
-Add functions to `raster.s`:
-
-```asm
-.global _raster_triangle
-
-_raster_triangle:
-    // Your implementation
-    ret
-```
-
-### Adding New Demos
-
-Create a new file in `src/`:
-
-```asm
-.global _main
-.include "include/constants.inc"
-
-_main:
-    // Your demo code
-    ret
-```
-
-Update the Makefile to build your demo.
+The `shared/raster.s` module is portable and needs no changes.
 
 ## Architecture Notes
 
-This library targets ARM64 (Apple Silicon). Key calling convention details:
+ARM64 (Apple Silicon) calling convention:
 - Arguments: x0-x7 (w0-w7 for 32-bit)
 - Return value: x0
 - Callee-saved: x19-x28
 - Frame pointer: x29
 - Link register: x30
-- Stack must be 16-byte aligned
+- Stack: 16-byte aligned
 
 ## License
 

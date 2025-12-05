@@ -1,11 +1,11 @@
 // ============================================================================
 // demo.s - Demo: Movable square with software rendering
 // ============================================================================
-// Demonstrates:
-//   - Software rasterizer (raster.s)
-//   - Native keyboard input (keyboard.s)
-//   - Window management (window.s)
-//   - Arrow keys / WASD to move, ESC/Q to quit
+// Demonstrates the graphics library with:
+//   - Native Cocoa window (no SDL)
+//   - Software rasterizer
+//   - Native keyboard input
+//   - Native timing
 // ============================================================================
 
 .global _main
@@ -28,12 +28,12 @@ _main:
     bl      _print_str
     bl      _print_newline
     
-    // Initialize window
+    // Initialize native window
     adrp    x0, window_title@PAGE
     add     x0, x0, window_title@PAGEOFF
     mov     w1, #WINDOW_WIDTH
     mov     w2, #WINDOW_HEIGHT
-    bl      _gfx_init
+    bl      _window_init
     
     cmp     x0, #0
     b.eq    init_ok
@@ -46,12 +46,6 @@ _main:
     b       exit_program
     
 init_ok:
-    // Create texture for blitting framebuffer
-    mov     w0, #WINDOW_WIDTH
-    mov     w1, #WINDOW_HEIGHT
-    bl      _gfx_create_texture
-    cbz     x0, init_failed
-    
     // Initialize software rasterizer
     mov     w0, #WINDOW_WIDTH
     mov     w1, #WINDOW_HEIGHT
@@ -78,9 +72,11 @@ init_ok:
 // Main loop
 // ============================================================================
 game_loop:
-    // Handle window events (close button)
-    bl      _events_poll
-    bl      _events_should_quit
+    // Poll window events
+    bl      _window_poll
+    
+    // Check if window closed
+    bl      _window_should_close
     cbnz    w0, quit_game
     
     // Update keyboard state
@@ -100,10 +96,10 @@ game_loop:
     // ========== Render ==========
     
     // Clear framebuffer
-    mov     w0, #20                  // R
-    mov     w1, #22                  // G
-    mov     w2, #30                  // B
-    mov     w3, #255                 // A
+    mov     w0, #20
+    mov     w1, #22
+    mov     w2, #30
+    mov     w3, #255
     bl      _raster_set_color
     bl      _raster_clear
     
@@ -195,21 +191,27 @@ game_loop:
     mov     w2, #15
     bl      _raster_circle_filled
     
-    // ========== Blit to screen ==========
+    // ========== Blit to window ==========
     
     bl      _raster_get_buffer
     mov     x19, x0
     
-    adrp    x0, _fb_pitch@PAGE
-    add     x0, x0, _fb_pitch@PAGEOFF
-    ldr     w1, [x0]
+    mov     w0, #WINDOW_WIDTH
+    mov     w1, #WINDOW_HEIGHT
     
-    mov     x0, x19
-    bl      _gfx_blit
+    adrp    x2, _fb_pitch@PAGE
+    add     x2, x2, _fb_pitch@PAGEOFF
+    ldr     w3, [x2]
+    
+    mov     x0, x19                  // buffer
+    mov     w1, #WINDOW_WIDTH
+    mov     w2, #WINDOW_HEIGHT
+    // w3 already has pitch
+    bl      _window_blit
     
     // Frame delay (~60 FPS)
     mov     w0, #16
-    bl      _SDL_Delay
+    bl      _timing_sleep_ms
     
     b       game_loop
 
@@ -233,7 +235,7 @@ cleanup:
     mov     w19, w0
     
     bl      _raster_free
-    bl      _gfx_quit
+    bl      _window_quit
     
     mov     w0, w19
     ldp     x19, x20, [sp], #16
@@ -244,6 +246,7 @@ exit_program:
 
 // ============================================================================
 // handle_movement - Update position based on keyboard state
+// Continuous movement while keys are held
 // ============================================================================
 .align 4
 handle_movement:

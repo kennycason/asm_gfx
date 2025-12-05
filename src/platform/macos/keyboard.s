@@ -1,17 +1,20 @@
 // ============================================================================
 // keyboard.s - Native macOS keyboard handling
 // ============================================================================
-// Uses CoreGraphics CGEventSourceKeyState to directly query keyboard.
+// Uses CoreGraphics CGEventSourceKeyState to query keyboard.
 //
 // Functions:
-//   keyboard_is_pressed  - Check if a key is currently pressed
-//   keyboard_update      - Update internal key state cache
-//   keyboard_get_state   - Get pointer to key state array
+//   keyboard_update      - Update key states (call once per frame)
+//   keyboard_get_state   - Get pointer to current key state array
+//   keyboard_is_held     - Check if key is currently held
+//   keyboard_just_pressed - Check if key was just pressed this frame
 // ============================================================================
 
-.global _keyboard_is_pressed
 .global _keyboard_update
 .global _keyboard_get_state
+.global _keyboard_is_held
+.global _keyboard_just_pressed
+.global _keyboard_is_pressed
 .global _native_key_state
 
 .include "include/constants.inc"
@@ -24,7 +27,6 @@
 .set kVK_ANSI_A,            0x00
 .set kVK_ANSI_S,            0x01
 .set kVK_ANSI_D,            0x02
-.set kVK_ANSI_F,            0x03
 .set kVK_ANSI_W,            0x0D
 .set kVK_ANSI_Q,            0x0C
 .set kVK_Space,             0x31
@@ -34,11 +36,10 @@
 .set kVK_DownArrow,         0x7D
 .set kVK_UpArrow,           0x7E
 
-// CGEventSourceStateID
 .set kCGEventSourceStateCombinedSessionState, 0
 
 // ============================================================================
-// _keyboard_is_pressed - Check if a specific key is pressed
+// _keyboard_is_pressed - Check if a specific key is pressed (raw)
 // Input:  w0 = Mac virtual key code
 // Output: w0 = 1 if pressed, 0 if not
 // ============================================================================
@@ -47,95 +48,101 @@ _keyboard_is_pressed:
     stp     x29, x30, [sp, #-16]!
     mov     x29, sp
     
-    // CGEventSourceKeyState(kCGEventSourceStateCombinedSessionState, keyCode)
-    mov     w1, w0                   // key code -> second arg
+    mov     w1, w0
     mov     w0, #kCGEventSourceStateCombinedSessionState
     bl      _CGEventSourceKeyState
-    
-    // Result is already in w0 (bool)
-    and     w0, w0, #1               // Ensure 0 or 1
+    and     w0, w0, #1
     
     ldp     x29, x30, [sp], #16
     ret
 
 // ============================================================================
-// _keyboard_update - Update internal key state array
-// Polls all relevant keys and caches their state
-// Input:  none
-// Output: none
+// _keyboard_update - Update key states
+// Copies current state to previous, then reads new current state
 // ============================================================================
 .align 4
 _keyboard_update:
     stp     x29, x30, [sp, #-16]!
     mov     x29, sp
     stp     x19, x20, [sp, #-16]!
+    stp     x21, x22, [sp, #-16]!
     
-    // Get pointer to our key state array
+    // Get pointers
     adrp    x19, _native_key_state@PAGE
     add     x19, x19, _native_key_state@PAGEOFF
+    adrp    x20, _prev_key_state@PAGE
+    add     x20, x20, _prev_key_state@PAGEOFF
     
-    // Check Up Arrow
+    // Copy current -> previous (16 bytes)
+    ldr     x0, [x19]
+    str     x0, [x20]
+    ldr     x0, [x19, #8]
+    str     x0, [x20, #8]
+    
+    // Now read new current state
+    
+    // Up Arrow
     mov     w0, #kVK_UpArrow
     bl      _keyboard_is_pressed
     strb    w0, [x19, #KEY_UP]
     
-    // Check Down Arrow
+    // Down Arrow
     mov     w0, #kVK_DownArrow
     bl      _keyboard_is_pressed
     strb    w0, [x19, #KEY_DOWN]
     
-    // Check Left Arrow
+    // Left Arrow
     mov     w0, #kVK_LeftArrow
     bl      _keyboard_is_pressed
     strb    w0, [x19, #KEY_LEFT]
     
-    // Check Right Arrow
+    // Right Arrow
     mov     w0, #kVK_RightArrow
     bl      _keyboard_is_pressed
     strb    w0, [x19, #KEY_RIGHT]
     
-    // Check Escape
+    // Escape
     mov     w0, #kVK_Escape
     bl      _keyboard_is_pressed
     strb    w0, [x19, #KEY_ESCAPE]
     
-    // Check Space
+    // Space
     mov     w0, #kVK_Space
     bl      _keyboard_is_pressed
     strb    w0, [x19, #KEY_SPACE]
     
-    // Check W
+    // W
     mov     w0, #kVK_ANSI_W
     bl      _keyboard_is_pressed
     strb    w0, [x19, #KEY_W]
     
-    // Check A
+    // A
     mov     w0, #kVK_ANSI_A
     bl      _keyboard_is_pressed
     strb    w0, [x19, #KEY_A]
     
-    // Check S
+    // S
     mov     w0, #kVK_ANSI_S
     bl      _keyboard_is_pressed
     strb    w0, [x19, #KEY_S]
     
-    // Check D
+    // D
     mov     w0, #kVK_ANSI_D
     bl      _keyboard_is_pressed
     strb    w0, [x19, #KEY_D]
     
-    // Check Q (for quit)
+    // Q
     mov     w0, #kVK_ANSI_Q
     bl      _keyboard_is_pressed
     strb    w0, [x19, #KEY_Q]
     
+    ldp     x21, x22, [sp], #16
     ldp     x19, x20, [sp], #16
     ldp     x29, x30, [sp], #16
     ret
 
 // ============================================================================
-// _keyboard_get_state - Get pointer to key state array
-// Input:  none
+// _keyboard_get_state - Get pointer to current key state array
 // Output: x0 = pointer to key state array
 // ============================================================================
 .align 4
@@ -145,7 +152,48 @@ _keyboard_get_state:
     ret
 
 // ============================================================================
-// Key indices in our state array (simple enum)
+// _keyboard_is_held - Check if a key is currently held (same as get_state)
+// Input:  w0 = key index (KEY_UP, etc.)
+// Output: w0 = 1 if held, 0 if not
+// ============================================================================
+.align 4
+_keyboard_is_held:
+    adrp    x1, _native_key_state@PAGE
+    add     x1, x1, _native_key_state@PAGEOFF
+    ldrb    w0, [x1, x0]
+    ret
+
+// ============================================================================
+// _keyboard_just_pressed - Check if key was JUST pressed this frame
+// Returns true only on the first frame the key is down
+// Input:  w0 = key index (KEY_UP, etc.)
+// Output: w0 = 1 if just pressed, 0 otherwise
+// ============================================================================
+.align 4
+_keyboard_just_pressed:
+    stp     x29, x30, [sp, #-16]!
+    mov     x29, sp
+    
+    // Get current state
+    adrp    x1, _native_key_state@PAGE
+    add     x1, x1, _native_key_state@PAGEOFF
+    ldrb    w2, [x1, x0]             // current[key]
+    
+    // Get previous state
+    adrp    x1, _prev_key_state@PAGE
+    add     x1, x1, _prev_key_state@PAGEOFF
+    ldrb    w3, [x1, x0]             // prev[key]
+    
+    // Just pressed = current && !prev
+    mvn     w3, w3                   // !prev
+    and     w0, w2, w3               // current & !prev
+    and     w0, w0, #1               // ensure 0 or 1
+    
+    ldp     x29, x30, [sp], #16
+    ret
+
+// ============================================================================
+// Key indices
 // ============================================================================
 .set KEY_UP,        0
 .set KEY_DOWN,      1
@@ -160,7 +208,6 @@ _keyboard_get_state:
 .set KEY_Q,         10
 .set KEY_COUNT,     11
 
-// Export key indices for use by other modules
 .global KEY_UP
 .global KEY_DOWN
 .global KEY_LEFT
@@ -174,9 +221,9 @@ _keyboard_get_state:
 .global KEY_Q
 
 // ============================================================================
-// Data section
+// Data
 // ============================================================================
 .data
 .align 4
-_native_key_state:  .space 16        // Key state array (one byte per key)
-
+_native_key_state:  .space 16        // Current key state
+_prev_key_state:    .space 16        // Previous frame key state
